@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Decision Helper</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <main class="container">
+        <header class="glass-panel header">
+            <h1>Decision AI</h1>
+            <p>Enter an activity to reveal its pros and cons.</p>
+        </header>
+
+        <section class="input-section glass-panel">
+            <div class="input-group">
+                <input type="text" id="topicInput" placeholder="e.g., Learning to fly a helicopter..." autocomplete="off">
+                <button id="analyzeBtn">Analyze</button>
+            </div>
+        </section>
+
+        <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <p>Consulting the neural network...</p>
+        </div>
+
+        <section id="results" class="results-grid hidden">
+            <div class="glass-panel column pros">
+                <h2>
+                    <span class="icon">✨</span> Pros
+                </h2>
+                <ul id="prosList"></ul>
+            </div>
+            <div class="glass-panel column cons">
+                <h2>
+                    <span class="icon">⚠️</span> Cons
+                </h2>
+                <ul id="consList"></ul>
+            </div>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
