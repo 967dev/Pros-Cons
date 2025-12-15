@@ -1,20 +1,24 @@
-export default async function handler(req, res) {
+export const config = {
+    runtime: 'edge', // Using Edge Runtime for speed and higher timeout (30s vs 10s)
+};
+
+export default async function handler(req) {
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
     }
 
     try {
-        const { topic } = req.body;
+        const { topic } = await req.json();
 
         if (!topic) {
-            return res.status(400).json({ error: 'Topic is required' });
+            return new Response(JSON.stringify({ error: 'Topic is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
         }
 
         const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey) {
             console.error('API Key missing');
-            return res.status(500).json({ error: 'Server configuration error: API Key missing' });
+            return new Response(JSON.stringify({ error: 'Server configuration error: API Key missing' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
         }
 
         const systemPrompt = `
@@ -57,10 +61,16 @@ export default async function handler(req, res) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error("OpenRouter API Error:", errorText);
-            return res.status(502).json({ error: 'Failed to communicate with AI' });
+            return new Response(JSON.stringify({ error: 'Failed to communicate with AI' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
         }
 
         const completion = await response.json();
+
+        // Safety check to ensure we actually got choices
+        if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
+            console.error("Invalid AI Response Structure:", JSON.stringify(completion));
+            return new Response(JSON.stringify({ error: 'Invalid response from AI provider' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+        }
 
         let content = completion.choices[0].message.content;
 
@@ -69,14 +79,14 @@ export default async function handler(req, res) {
 
         try {
             const jsonResponse = JSON.parse(content);
-            return res.status(200).json(jsonResponse);
+            return new Response(JSON.stringify(jsonResponse), { status: 200, headers: { 'Content-Type': 'application/json' } });
         } catch (parseError) {
             console.error("JSON Parse Error:", parseError, "Content:", content);
-            return res.status(500).json({ error: 'Failed to parse AI response' });
+            return new Response(JSON.stringify({ error: 'Failed to parse AI response' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
         }
 
     } catch (error) {
         console.error("Internal Server Error:", error);
-        return res.status(500).json({ error: 'Internal Server Error' });
+        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 }
