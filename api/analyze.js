@@ -1,23 +1,20 @@
-export const config = {
-    runtime: 'edge', // Using Edge Runtime for speed
-};
-
-export default async function handler(req) {
+export default async function handler(req, res) {
     if (req.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
     try {
-        const { topic } = await req.json();
+        const { topic } = req.body;
 
         if (!topic) {
-            return new Response(JSON.stringify({ error: 'Topic is required' }), { status: 400 });
+            return res.status(400).json({ error: 'Topic is required' });
         }
 
         const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey) {
-            return new Response(JSON.stringify({ error: 'Server configuration error: API Key missing' }), { status: 500 });
+            console.error('API Key missing');
+            return res.status(500).json({ error: 'Server configuration error: API Key missing' });
         }
 
         const systemPrompt = `
@@ -60,7 +57,7 @@ export default async function handler(req) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error("OpenRouter API Error:", errorText);
-            return new Response(JSON.stringify({ error: 'Failed to communicate with AI' }), { status: 502 });
+            return res.status(502).json({ error: 'Failed to communicate with AI' });
         }
 
         const completion = await response.json();
@@ -70,14 +67,16 @@ export default async function handler(req) {
         // Cleanup: Remove markdown code blocks if the AI accidentally included them
         content = content.replace(/```json/g, '').replace(/```/g, '').trim();
 
-        const jsonResponse = JSON.parse(content);
-
-        return new Response(JSON.stringify(jsonResponse), {
-            headers: { 'Content-Type': 'application/json' }
-        });
+        try {
+            const jsonResponse = JSON.parse(content);
+            return res.status(200).json(jsonResponse);
+        } catch (parseError) {
+            console.error("JSON Parse Error:", parseError, "Content:", content);
+            return res.status(500).json({ error: 'Failed to parse AI response' });
+        }
 
     } catch (error) {
         console.error("Internal Server Error:", error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 }
