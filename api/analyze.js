@@ -3,10 +3,11 @@ export const config = {
 };
 
 const MODELS = [
-    "google/gemini-2.0-flash-exp:free",           // High quality, fast
-    "mistralai/mistral-small-3.1-24b-instruct:free", // Reliable fallback
-    "google/gemma-3-12b-it:free",                 // Good alternative
-    "meta-llama/llama-3.2-11b-vision-instruct:free" // Vision/Text fallback
+    "openrouter/cinematika-7b-alpha:free", // Truly free/unlimited (experimental)
+    "liquid/lfm-40b:free",                 // Liquid model (often free)
+    "google/gemini-2.0-flash-exp:free",    // High quality (rate limited)
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-12b-it:free"
 ];
 
 export default async function handler(req) {
