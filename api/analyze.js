@@ -3,9 +3,10 @@ export const config = {
 };
 
 const MODELS = [
-    "tngtech/deepseek-r1t2-chimera:free",  // Primary
-    "google/gemini-2.0-flash-exp:free",    // Fast fallback
-    "meta-llama/llama-3-8b-instruct:free"  // Reliable fallback
+    "google/gemini-2.0-flash-exp:free",           // High quality, fast
+    "mistralai/mistral-small-3.1-24b-instruct:free", // Reliable fallback
+    "google/gemma-3-12b-it:free",                 // Good alternative
+    "meta-llama/llama-3.2-11b-vision-instruct:free" // Vision/Text fallback
 ];
 
 export default async function handler(req) {
