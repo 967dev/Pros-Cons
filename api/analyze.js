@@ -51,7 +51,7 @@ export default async function handler(req) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                "model": "google/gemini-2.0-flash-exp:free",
+                "model": "tngtech/deepseek-r1t2-chimera:free",
                 "messages": [
                     { "role": "user", "content": systemPrompt }
                 ]
