@@ -2,8 +2,16 @@ export const config = {
     runtime: 'edge',
 };
 
+// Define models with their specific provider settings
 const MODELS = [
-    "tngtech/deepseek-r1t2-chimera:free" // User requested specific model
+    {
+        provider: 'openrouter',
+        id: 'tngtech/deepseek-r1t2-chimera:free'
+    },
+    {
+        provider: 'mistral',
+        id: 'mistral-small-latest' // Standard efficient model
+    }
 ];
 
 export default async function handler(req) {
@@ -18,11 +26,8 @@ export default async function handler(req) {
             return new Response(JSON.stringify({ error: 'Topic is required' }), { status: 400 });
         }
 
-        const apiKey = process.env.OPENROUTER_API_KEY;
-
-        if (!apiKey) {
-            return new Response(JSON.stringify({ error: 'Server configuration error: API Key missing' }), { status: 500 });
-        }
+        const openRouterKey = process.env.OPENROUTER_API_KEY;
+        const mistralKey = process.env.MISTRAL_API_KEY;
 
         const systemPrompt = `
 Вы — эксперт по анализу решений и генерации структурированных данных. Ваша задача — проанализировать указанное ниже занятие или деятельность и сгенерировать исчерпывающий список плюсов и минусов, касающихся этого выбора.
@@ -49,19 +54,45 @@ export default async function handler(req) {
 
         let lastError = null;
 
-        for (const model of MODELS) {
+        for (const modelConfig of MODELS) {
             try {
-                console.log(`Attempting with model: ${model}`);
-                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                    method: "POST",
-                    headers: {
+                const { provider, id } = modelConfig;
+                console.log(`Attempting with provider: ${provider}, model: ${id}`);
+
+                let apiUrl, apiKey, headers;
+
+                if (provider === 'mistral') {
+                    if (!mistralKey) {
+                        console.warn('Skipping Mistral: API Key missing');
+                        continue;
+                    }
+                    apiUrl = 'https://api.mistral.ai/v1/chat/completions';
+                    apiKey = mistralKey;
+                    headers = {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json"
+                    };
+                } else {
+                    // Default to OpenRouter
+                    if (!openRouterKey) {
+                        console.warn('Skipping OpenRouter: API Key missing');
+                        continue;
+                    }
+                    apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
+                    apiKey = openRouterKey;
+                    headers = {
                         "Authorization": `Bearer ${apiKey}`,
                         "Content-Type": "application/json",
-                        "HTTP-Referer": "https://pros-cons.vercel.app", // Required by OpenRouter for free tier
+                        "HTTP-Referer": "https://pros-cons.vercel.app",
                         "X-Title": "Pros & Cons App"
-                    },
+                    };
+                }
+
+                const response = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: headers,
                     body: JSON.stringify({
-                        "model": model,
+                        "model": id,
                         "messages": [
                             { "role": "user", "content": systemPrompt }
                         ],
@@ -71,8 +102,8 @@ export default async function handler(req) {
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.warn(`Model ${model} failed: ${response.status} - ${errorText}`);
-                    lastError = `Model ${model} error: ${response.status} - ${errorText}`;
+                    console.warn(`Model ${id} (${provider}) failed: ${response.status} - ${errorText}`);
+                    lastError = `${provider} error: ${response.status} - ${errorText}`;
                     continue; // Try next model
                 }
 
@@ -125,14 +156,14 @@ export default async function handler(req) {
                 });
 
             } catch (err) {
-                console.error(`Fetch error for ${model}:`, err);
+                console.error(`Fetch error for ${modelConfig.id}:`, err);
                 lastError = err.message;
             }
         }
 
         // If all models fail
         return new Response(JSON.stringify({
-            error: 'All AI models failed to respond. Please try again later.',
+            error: 'All AI models failed to respond. Please check API quotas.',
             details: lastError
         }), { status: 502 });
 
