@@ -1,6 +1,13 @@
+```javascript
 export const config = {
     runtime: 'edge',
 };
+
+const MODELS = [
+    "tngtech/deepseek-r1t2-chimera:free",  // Primary
+    "google/gemini-2.0-flash-exp:free",    // Fast fallback
+    "meta-llama/llama-3-8b-instruct:free"  // Reliable fallback
+];
 
 export default async function handler(req) {
     if (req.method !== 'POST') {
@@ -21,10 +28,10 @@ export default async function handler(req) {
         }
 
         const systemPrompt = `
-Вы — эксперт по анализу решений и генерации структурированных данных. Ваша задача — проанализировать указанное ниже занятие или деятельность и сгенерировать исчерпывающий список плюсов и минусов, касающихся этого выбора.
+Вы — эксперт по анализу решений и генерации структурированных данных.Ваша задача — проанализировать указанное ниже занятие или деятельность и сгенерировать исчерпывающий список плюсов и минусов, касающихся этого выбора.
 
 ### Строгие инструкции по форматированию:
-1.  **Вывод должен быть ТОЛЬКО в формате JSON.** Не добавляйте никакого дополнительного текста, введения, пояснений или markdown-тегов (например, \`\`\`json) до или после самого JSON-объекта.
+1. ** Вывод должен быть ТОЛЬКО в формате JSON.** Не добавляйте никакого дополнительного текста, введения, пояснений или markdown - тегов(например, \`\`\`json) до или после самого JSON-объекта.
 2.  Объект JSON должен иметь корневой ключ \`analysis\`.
 3.  Объект \`analysis\` должен содержать два обязательных ключа: \`pros\` (Плюсы) и \`cons\` (Минусы).
 4.  Значения ключей \`pros\` и \`cons\` должны быть **массивами строк**.
@@ -43,28 +50,36 @@ export default async function handler(req) {
 }
         `;
 
+let lastError = null;
+
+for (const model of MODELS) {
+    try {
+        console.log(`Attempting with model: ${model}`);
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://pros-cons.vercel.app", // Required by OpenRouter for free tier
+                "X-Title": "Pros & Cons App"
             },
             body: JSON.stringify({
-                "model": "tngtech/deepseek-r1t2-chimera:free",
+                "model": model,
                 "messages": [
                     { "role": "user", "content": systemPrompt }
                 ],
-                "stream": true // Enable streaming
+                "stream": true
             })
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error("OpenRouter API Error:", errorText);
-            return new Response(JSON.stringify({ error: 'Failed to communicate with AI' }), { status: 502 });
+            console.warn(`Model ${model} failed: ${response.status} - ${errorText}`);
+            lastError = `Model ${model} error: ${response.status} - ${errorText}`;
+            continue; // Try next model
         }
 
-        // Create a transform stream to parse SSE and extract tokens
+        // If successful, start streaming
         const stream = new ReadableStream({
             async start(controller) {
                 const reader = response.body.getReader();
@@ -79,7 +94,7 @@ export default async function handler(req) {
                         const chunk = decoder.decode(value, { stream: true });
                         buffer += chunk;
                         const lines = buffer.split('\n');
-                        buffer = lines.pop(); // Keep incomplete line in buffer
+                        buffer = lines.pop();
 
                         for (const line of lines) {
                             if (line.trim() === '') continue;
@@ -91,7 +106,7 @@ export default async function handler(req) {
                                         controller.enqueue(new TextEncoder().encode(data.choices[0].delta.content));
                                     }
                                 } catch (e) {
-                                    console.error('Error parsing JSON stream chunk', e);
+                                    // Ignore parse errors for partial chunks
                                 }
                             }
                         }
@@ -112,8 +127,21 @@ export default async function handler(req) {
             }
         });
 
-    } catch (error) {
-        console.error("Internal Server Error:", error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
+    } catch (err) {
+        console.error(`Fetch error for ${model}:`, err);
+        lastError = err.message;
     }
 }
+
+// If all models fail
+return new Response(JSON.stringify({
+    error: 'All AI models failed to respond. Please try again later.',
+    details: lastError
+}), { status: 502 });
+
+    } catch (error) {
+    console.error("Internal Server Error:", error);
+    return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
+}
+}
+```
