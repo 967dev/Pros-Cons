@@ -1,24 +1,23 @@
 export const config = {
-    runtime: 'edge', // Using Edge Runtime for speed and higher timeout (30s vs 10s)
+    runtime: 'edge',
 };
 
 export default async function handler(req) {
     if (req.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
     }
 
     try {
         const { topic } = await req.json();
 
         if (!topic) {
-            return new Response(JSON.stringify({ error: 'Topic is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ error: 'Topic is required' }), { status: 400 });
         }
 
         const apiKey = process.env.OPENROUTER_API_KEY;
 
         if (!apiKey) {
-            console.error('API Key missing');
-            return new Response(JSON.stringify({ error: 'Server configuration error: API Key missing' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ error: 'Server configuration error: API Key missing' }), { status: 500 });
         }
 
         const systemPrompt = `
@@ -54,39 +53,67 @@ export default async function handler(req) {
                 "model": "tngtech/deepseek-r1t2-chimera:free",
                 "messages": [
                     { "role": "user", "content": systemPrompt }
-                ]
+                ],
+                "stream": true // Enable streaming
             })
         });
 
         if (!response.ok) {
             const errorText = await response.text();
             console.error("OpenRouter API Error:", errorText);
-            return new Response(JSON.stringify({ error: 'Failed to communicate with AI' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ error: 'Failed to communicate with AI' }), { status: 502 });
         }
 
-        const completion = await response.json();
+        // Create a transform stream to parse SSE and extract tokens
+        const stream = new ReadableStream({
+            async start(controller) {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
 
-        // Safety check to ensure we actually got choices
-        if (!completion.choices || !completion.choices[0] || !completion.choices[0].message) {
-            console.error("Invalid AI Response Structure:", JSON.stringify(completion));
-            return new Response(JSON.stringify({ error: 'Invalid response from AI provider' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
-        }
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
 
-        let content = completion.choices[0].message.content;
+                        const chunk = decoder.decode(value, { stream: true });
+                        buffer += chunk;
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // Keep incomplete line in buffer
 
-        // Cleanup: Remove markdown code blocks if the AI accidentally included them
-        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+                        for (const line of lines) {
+                            if (line.trim() === '') continue;
+                            if (line.trim() === 'data: [DONE]') continue;
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                                        controller.enqueue(new TextEncoder().encode(data.choices[0].delta.content));
+                                    }
+                                } catch (e) {
+                                    console.error('Error parsing JSON stream chunk', e);
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Stream reading error', err);
+                    controller.error(err);
+                } finally {
+                    controller.close();
+                }
+            }
+        });
 
-        try {
-            const jsonResponse = JSON.parse(content);
-            return new Response(JSON.stringify(jsonResponse), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        } catch (parseError) {
-            console.error("JSON Parse Error:", parseError, "Content:", content);
-            return new Response(JSON.stringify({ error: 'Failed to parse AI response' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-        }
+        return new Response(stream, {
+            headers: {
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Transfer-Encoding': 'chunked'
+            }
+        });
 
     } catch (error) {
         console.error("Internal Server Error:", error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
     }
 }

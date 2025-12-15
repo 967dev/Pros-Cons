@@ -34,8 +34,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Failed to fetch analysis');
             }
 
-            const data = await response.json();
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedText = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                accumulatedText += decoder.decode(value, { stream: true });
+            }
+
+            // Cleanup: Using regex to find the JSON object within the text
+            // Sometimes models output text before/after the JSON block
+            let jsonString = accumulatedText;
+
+            // Try to extract JSON from markdown block
+            const markdownMatch = accumulatedText.match(/```json\s*([\s\S]*?)\s*```/);
+            if (markdownMatch) {
+                jsonString = markdownMatch[1];
+            } else {
+                // Or just remove code ticks if no lang specified
+                jsonString = jsonString.replace(/```json/g, '').replace(/```/g, '');
+            }
+
+            // Find the first { and last } to isolate the object
+            const firstBrace = jsonString.indexOf('{');
+            const lastBrace = jsonString.lastIndexOf('}');
+
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                jsonString = jsonString.substring(firstBrace, lastBrace + 1);
+            }
+
+            const data = JSON.parse(jsonString);
             renderResults(data);
+
         } catch (error) {
             alert('Something went wrong. Please try again.');
             console.error(error);
